@@ -21,10 +21,21 @@ Known issues:
 
 ## Prerequisites
 
+### ADB
+
+Download and run `adb`: https://developer.android.com/tools/releases/platform-tools#downloads
+
+### Input Leap
+
 1. Download and install [Input Leap](https://github.com/input-leap/input-leap)
 2. Set your PC as server
 3. Add a screen named "Scrcpy" and place it as you want (https://github.com/input-leap/input-leap#usage)
-4. Prepare your Android device to run Scrcpy (https://github.com/Genymobile/scrcpy#prerequisites)
+
+### Scrcpy
+
+Prepare your Android device to run Scrcpy (https://github.com/Genymobile/scrcpy#prerequisites).
+
+This project is an alternative Scrcpy client. You don't need to download nor run Scrcpy.
 
 Connect only 1 android devices, because it doesn't support selecting devices yet.
 
