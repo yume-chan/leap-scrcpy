@@ -1,0 +1,28 @@
+{
+  "name": "leap-scrcpy",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@yume-chan/adb": "^1.1.0",
+    "@yume-chan/adb-scrcpy": "^1.1.0",
+    "@yume-chan/adb-server-node-tcp": "^1.1.0",
+    "@yume-chan/event": "^1.0.0",
+    "@yume-chan/fetch-scrcpy-server": "^1.0.0",
+    "@yume-chan/no-data-view": "^1.0.0",
+    "@yume-chan/scrcpy": "^1.1.0",
+    "@yume-chan/stream-extra": "^1.0.0",
+    "@yume-chan/struct": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
