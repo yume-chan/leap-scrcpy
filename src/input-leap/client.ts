@@ -1,4 +1,3 @@
-import { encodeUtf8, sequenceEqual } from "@yume-chan/adb";
 import { EventEmitter } from "@yume-chan/event";
 import {
   getUint32BigEndian,
@@ -11,7 +10,6 @@ import {
 import {
   buffer,
   decodeUtf8,
-  ExactReadable,
   string,
   struct,
   u16,
@@ -19,48 +17,16 @@ import {
 } from "@yume-chan/struct";
 import { once } from "node:events";
 import { connect, TLSSocket } from "node:tls";
-
-function bufferExactReadable(
-  buffer: Uint8Array,
-  position: number
-): ExactReadable {
-  return {
-    get position() {
-      return position;
-    },
-    readExactly(length) {
-      const result = buffer.subarray(this.position, this.position + length);
-      position += result.length;
-      return result;
-    },
-  };
-}
-
-function startsWith(buffer: Uint8Array, prefix: Uint8Array) {
-  return sequenceEqual(buffer.subarray(0, prefix.length), prefix);
-}
-
-const MessageType = {
-  Hello: encodeUtf8("Barrier"),
-  KeepAlive: encodeUtf8("CALV"),
-  QueryInfo: encodeUtf8("QINF"),
-  Info: encodeUtf8("DINF"),
-  AckInfo: encodeUtf8("CIAK"),
-  MouseMove: encodeUtf8("DMMV"),
-  MouseDown: encodeUtf8("DMDN"),
-  MouseUp: encodeUtf8("DMUP"),
-  Enter: encodeUtf8("CINN"),
-  Leave: encodeUtf8("COUT"),
-} as const;
+import { ClipboardChunk } from "./clipboard.js";
+import { MessageType } from "./message-type.js";
+import { bufferExactReadable, startsWith } from "./utils.js";
 
 const MessageHello = struct(
   {
     versionMajor: u16,
     versionMinor: u16,
   },
-  {
-    littleEndian: false,
-  }
+  { littleEndian: false }
 );
 
 const MessageHelloBack = struct(
@@ -70,9 +36,7 @@ const MessageHelloBack = struct(
     versionMinor: u16,
     name: string(u32),
   },
-  {
-    littleEndian: false,
-  }
+  { littleEndian: false }
 );
 
 const MessageInfo = struct(
@@ -110,11 +74,6 @@ const MessageEnter = struct(
 async function readMessage(readable: BufferedReadableStream) {
   const buffer = await readable.readExactly(4);
   const length = getUint32BigEndian(buffer, 0);
-
-  if (length > 1024) {
-    throw new Error("Message too long");
-  }
-
   return await readable.readExactly(length);
 }
 
@@ -176,7 +135,7 @@ export class InputLeapClient {
         continue;
       }
 
-      if (startsWith(buffer, MessageType.QueryInfo)) {
+      if (startsWith(buffer, MessageType.InfoQuery)) {
         writeMessage(
           socket,
           MessageInfo.serialize({
@@ -193,7 +152,7 @@ export class InputLeapClient {
         continue;
       }
 
-      if (startsWith(buffer, MessageType.AckInfo)) {
+      if (startsWith(buffer, MessageType.InfoAck)) {
         return new InputLeapClient(socket, buffered);
       }
 
@@ -209,6 +168,9 @@ export class InputLeapClient {
 
   #socket: TLSSocket;
   #keepAliveTimeout: NodeJS.Timeout;
+
+  #lastSequenceNumber = 0;
+  #clipboard = new ClipboardChunk();
 
   #onEnter = new EventEmitter<{
     x: number;
@@ -240,6 +202,13 @@ export class InputLeapClient {
     return this.#onMouseUp.event;
   }
 
+  #onClipboard = new EventEmitter<string>();
+  get onClipboard() {
+    return this.#onClipboard.event;
+  }
+
+  #lastClipboard = "";
+
   constructor(socket: TLSSocket, readable: BufferedReadableStream) {
     this.#socket = socket;
 
@@ -256,6 +225,7 @@ export class InputLeapClient {
           const message = MessageEnter.deserialize(
             bufferExactReadable(buffer, MessageType.Enter.length)
           );
+          this.#lastSequenceNumber = message.sequenceNumber;
           this.#onEnter.fire({
             x: message.x,
             y: message.y,
@@ -280,17 +250,29 @@ export class InputLeapClient {
 
         if (startsWith(buffer, MessageType.MouseDown)) {
           const button = buffer[MessageType.MouseDown.length + 1];
-          this.#onMouseDown.fire(button)
+          this.#onMouseDown.fire(button);
           continue;
         }
 
         if (startsWith(buffer, MessageType.MouseUp)) {
           const button = buffer[MessageType.MouseUp.length + 1];
-          this.#onMouseUp.fire(button)
+          this.#onMouseUp.fire(button);
           continue;
         }
 
-        if (startsWith(buffer, MessageType.KeepAlive)) {
+        if (startsWith(buffer, MessageType.Clipboard)) {
+          const result = this.#clipboard.write(buffer);
+          if (result && result !== this.#lastClipboard) {
+            this.#lastClipboard = result;
+            this.#onClipboard.fire(result);
+          }
+          continue;
+        }
+
+        if (
+          startsWith(buffer, MessageType.KeepAlive) ||
+          startsWith(buffer, MessageType.InfoAck)
+        ) {
           continue;
         }
 
@@ -318,5 +300,23 @@ export class InputLeapClient {
         mouseY: 0,
       })
     );
+  }
+
+  setClipboard(data: string) {
+    if (!this.#lastSequenceNumber) {
+      return;
+    }
+
+    if (data === this.#lastClipboard) {
+      return;
+    }
+    this.#lastClipboard = data;
+
+    for (const chunk of ClipboardChunk.serialize(
+      this.#lastSequenceNumber,
+      data
+    )) {
+      this.#writeMessage(chunk);
+    }
   }
 }

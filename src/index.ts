@@ -3,17 +3,14 @@ import { AdbScrcpyClient, AdbScrcpyOptions2_1 } from "@yume-chan/adb-scrcpy";
 import { AdbServerNodeTcpConnector } from "@yume-chan/adb-server-node-tcp";
 import { BIN } from "@yume-chan/fetch-scrcpy-server";
 import {
-  AndroidMotionEventAction,
   DefaultServerPath,
   h264ParseConfiguration,
   ScrcpyOptions3_1,
-  ScrcpyPointerId,
-  ScrcpyVideoCodecId,
 } from "@yume-chan/scrcpy";
 import { ReadableStream, WritableStream } from "@yume-chan/stream-extra";
 import { createReadStream } from "node:fs";
-import { InputLeapClient } from "./input-leap.js";
 import { HidStylus } from "./hid.js";
+import { InputLeapClient } from "./input-leap/client.js";
 
 const address = process.argv[2] ?? "localhost:24800";
 const name = process.argv[3] ?? "Scrcpy";
@@ -42,12 +39,14 @@ await AdbScrcpyClient.pushServer(
   DefaultServerPath
 );
 
+const options = new AdbScrcpyOptions2_1(
+  new ScrcpyOptions3_1({ audio: false, showTouches: true })
+);
+
 const scrcpyClient = await AdbScrcpyClient.start(
   adb,
   DefaultServerPath,
-  new AdbScrcpyOptions2_1(
-    new ScrcpyOptions3_1({ audio: false, showTouches: true })
-  )
+  options
 );
 
 const videoStream = await scrcpyClient.videoStream;
@@ -58,85 +57,88 @@ if (!videoStream) {
 let stylus: HidStylus | undefined;
 let inputLeapClient: InputLeapClient | undefined;
 
-let screenWidth = 0;
-let screenHeight = 0;
+for await (const chunk of videoStream.stream) {
+  if (chunk.type === "configuration") {
+    const { croppedWidth: width, croppedHeight: height } =
+      h264ParseConfiguration(chunk.data);
 
-videoStream.stream.pipeTo(
-  new WritableStream({
-    async write(chunk) {
-      if (chunk.type === "configuration") {
-        switch (videoStream.metadata.codec) {
-          case ScrcpyVideoCodecId.H264: {
-            ({ croppedWidth: screenWidth, croppedHeight: screenHeight } =
-              h264ParseConfiguration(chunk.data));
+    if (!inputLeapClient) {
+      stylus = new HidStylus(width, height);
+      scrcpyClient.controller!.uHidCreate({
+        id: 0,
+        data: HidStylus.Descriptor,
+        vendorId: 0,
+        productId: 0,
+        name: "Stylus",
+      });
 
-            console.log("Get screen size", screenWidth, screenHeight);
+      inputLeapClient = await InputLeapClient.connect(
+        host,
+        Number.parseInt(port, 10),
+        name,
+        width,
+        height
+      );
 
-            if (!inputLeapClient) {
-              stylus = new HidStylus(screenWidth, screenHeight);
-              scrcpyClient.controller?.uHidCreate({
-                id: 0,
-                data: HidStylus.Descriptor,
-                vendorId: 0,
-                productId: 0,
-                name: "Stylus",
-              });
+      inputLeapClient.onEnter(({ x, y }) => {
+        stylus!.enter();
+        stylus!.move(x, y);
+        scrcpyClient.controller!.uHidInput({
+          id: 0,
+          data: stylus!.report,
+        });
+      });
 
-              inputLeapClient = await InputLeapClient.connect(
-                host,
-                Number.parseInt(port, 10),
-                name,
-                screenWidth,
-                screenHeight
-              );
+      inputLeapClient.onLeave(() => {
+        stylus!.leave();
+        scrcpyClient.controller!.uHidInput({
+          id: 0,
+          data: stylus!.report,
+        });
+      });
 
-              inputLeapClient.onEnter(({ x, y }) => {
-                stylus!.enter();
-                stylus!.move(x, y);
-                scrcpyClient.controller!.uHidInput({
-                  id: 0,
-                  data: stylus!.report,
-                });
-              });
+      inputLeapClient.onMouseMove(({ x, y }) => {
+        stylus!.move(x, y);
+        scrcpyClient.controller!.uHidInput({
+          id: 0,
+          data: stylus!.report,
+        });
+      });
 
-              inputLeapClient.onLeave(() => {
-                stylus!.leave();
-                scrcpyClient.controller!.uHidInput({
-                  id: 0,
-                  data: stylus!.report,
-                });
-              });
+      inputLeapClient.onMouseDown((button) => {
+        stylus!.buttonDown(button);
+        scrcpyClient.controller!.uHidInput({
+          id: 0,
+          data: stylus!.report,
+        });
+      });
 
-              inputLeapClient.onMouseMove(({ x, y }) => {
-                stylus!.move(x, y);
-                scrcpyClient.controller!.uHidInput({
-                  id: 0,
-                  data: stylus!.report,
-                });
-              });
+      inputLeapClient.onMouseUp((button) => {
+        stylus!.buttonUp(button);
+        scrcpyClient.controller!.uHidInput({
+          id: 0,
+          data: stylus!.report,
+        });
+      });
 
-              inputLeapClient.onMouseDown((button) => {
-                stylus!.buttonDown(button);
-                scrcpyClient.controller!.uHidInput({
-                  id: 0,
-                  data: stylus!.report,
-                });
-              });
+      inputLeapClient.onClipboard((data) => {
+        scrcpyClient.controller!.setClipboard({
+          content: data,
+          paste: false,
+          sequence: 0n,
+        });
+      });
 
-              inputLeapClient.onMouseUp((button) => {
-                stylus!.buttonUp(button);
-                scrcpyClient.controller!.uHidInput({
-                  id: 0,
-                  data: stylus!.report,
-                });
-              });
-            } else {
-              inputLeapClient.setSize(screenWidth, screenHeight);
-            }
-            break;
-          }
-        }
-      }
-    },
-  })
-);
+      options.clipboard!.pipeTo(
+        new WritableStream({
+          write(chunk) {
+            inputLeapClient!.setClipboard(chunk);
+          },
+        })
+      );
+    } else {
+      stylus!.setSize(height, height);
+      inputLeapClient.setSize(width, height);
+    }
+  }
+}
