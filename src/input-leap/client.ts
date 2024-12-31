@@ -95,7 +95,10 @@ export class InputLeapClient {
     width: number,
     height: number
   ) {
-    const socket = connect(port, host, {
+    // Workaround https://github.com/oven-sh/bun/issues/16086
+    const socket = connect({
+      host,
+      port,
       rejectUnauthorized: false,
     });
     await once(socket, "secureConnect");

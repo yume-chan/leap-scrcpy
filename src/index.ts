@@ -1,14 +1,14 @@
 import { Adb, AdbServerClient } from "@yume-chan/adb";
 import { AdbScrcpyClient, AdbScrcpyOptions2_1 } from "@yume-chan/adb-scrcpy";
 import { AdbServerNodeTcpConnector } from "@yume-chan/adb-server-node-tcp";
-import { BIN } from "@yume-chan/fetch-scrcpy-server";
+import ScrcpyServer from "@yume-chan/fetch-scrcpy-server/server.bin" with { type: "file" };
 import {
   DefaultServerPath,
   h264ParseConfiguration,
   ScrcpyOptions3_1,
 } from "@yume-chan/scrcpy";
-import { ReadableStream, WritableStream } from "@yume-chan/stream-extra";
-import { createReadStream } from "node:fs";
+import { WritableStream } from "@yume-chan/stream-extra";
+import { file } from 'bun';
 import { HidStylus } from "./hid.js";
 import { InputLeapClient } from "./input-leap/client.js";
 
@@ -35,7 +35,7 @@ const adb = new Adb(await adbClient.createTransport(devices[0]));
 
 await AdbScrcpyClient.pushServer(
   adb,
-  ReadableStream.from(createReadStream(BIN)),
+  file(ScrcpyServer).stream() as never,
   DefaultServerPath
 );
 
