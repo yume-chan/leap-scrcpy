@@ -46,7 +46,7 @@ There is no binary release yet, so you need to run from source
 1. Install Node.js and pnpm (`npm i -g pnpm`)
 2. Clone this repository
 3. Run `pnpm install`
-4. Run `npx tsc`
+4. Run `pnpm build`
 
 ## Usage
 
