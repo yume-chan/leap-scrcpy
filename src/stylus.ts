@@ -44,27 +44,17 @@ export class HidStylus {
 
   #in = false;
   #buttons = 0;
-  #x = 0;
-  #y = 0;
 
-  #width: number;
-  #height: number;
-
-  constructor(width: number, height: number) {
-    this.#width = width;
-    this.#height = height;
-  }
+  #width = 0;
+  #height = 0;
 
   setSize(width: number, height: number) {
     this.#width = width;
     this.#height = height;
-    this.#x = 0;
-    this.#y = 0;
   }
 
   move(x: number, y: number) {
-    this.#x = x;
-    this.#y = y;
+    // console.log("[stylus]", "move", x, y);
     setUint16LittleEndian(this.#report, 1, (x / this.#width) * 0x7fff);
     setUint16LittleEndian(this.#report, 3, (y / this.#height) * 0x7fff);
   }

@@ -1,19 +1,15 @@
 import { Adb, AdbServerClient } from "@yume-chan/adb";
-import { AdbScrcpyClient, AdbScrcpyOptions2_1 } from "@yume-chan/adb-scrcpy";
 import { AdbServerNodeTcpConnector } from "@yume-chan/adb-server-node-tcp";
-import { BIN } from "@yume-chan/fetch-scrcpy-server";
-import {
-  DefaultServerPath,
-  h264ParseConfiguration,
-  ScrcpyOptions3_1,
-} from "@yume-chan/scrcpy";
-import { ReadableStream, WritableStream } from "@yume-chan/stream-extra";
-import { createReadStream } from "node:fs";
-import { HidStylus } from "./hid.js";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { InputLeapClient } from "./input-leap/client.js";
+import { Lazy } from "./lazy.js";
+import { RotationMapper } from "./rotation.js";
+import { ServerClient } from "./server.js";
+import { HidStylus } from "./stylus.js";
 
 const address = process.argv[2] ?? "localhost:24800";
-const name = process.argv[3] ?? "Scrcpy";
+const name = process.argv[3] ?? "Android";
 
 const [host, port] = address.split(":");
 if (!host || !port) {
@@ -22,123 +18,107 @@ if (!host || !port) {
 }
 
 const adbClient = new AdbServerClient(
-  new AdbServerNodeTcpConnector({ host: "127.0.0.1", port: 5037 })
+  new AdbServerNodeTcpConnector({ host: "127.0.0.1", port: 5037 }),
 );
 
 const devices = await adbClient.getDevices();
 if (devices.length === 0) {
   console.log("No device found");
-  process.exit(1);
+  process.exit(2);
 }
 
-const adb = new Adb(await adbClient.createTransport(devices[0]));
+export const adb = new Adb(await adbClient.createTransport(devices[0]));
+console.log("using device", adb.serial);
 
-await AdbScrcpyClient.pushServer(
+export const LocalRoot = resolve(fileURLToPath(import.meta.url), "../..");
+
+const server = await ServerClient.start(
   adb,
-  ReadableStream.from(createReadStream(BIN)),
-  DefaultServerPath
+  resolve(LocalRoot, "server/app/build/outputs/apk/debug/app-debug.apk"),
 );
 
-const options = new AdbScrcpyOptions2_1(
-  new ScrcpyOptions3_1({ audio: false, showTouches: true })
-);
+const rotationMapper = new RotationMapper();
+const stylus = new HidStylus();
+const uHidStylus = await server.createUHidDevice(0, HidStylus.Descriptor);
 
-const scrcpyClient = await AdbScrcpyClient.start(
-  adb,
-  DefaultServerPath,
-  options
-);
+const inputLeapLazy = new Lazy(async (width: number, height: number) => {
+  const client = await InputLeapClient.connect(
+    {
+      host,
+      port: Number.parseInt(port, 10),
+    },
+    name,
+    width,
+    height,
+  );
 
-const videoStream = await scrcpyClient.videoStream;
-if (!videoStream) {
-  throw new Error("Video stream not found");
-}
+  console.log("[deskflow]", "server connected");
 
-let stylus: HidStylus | undefined;
-let inputLeapClient: InputLeapClient | undefined;
+  client.onEnter(({ x, y }) => {
+    rotationMapper.setLogicalPosition(x, y);
 
-for await (const chunk of videoStream.stream) {
-  if (chunk.type === "configuration") {
-    const { croppedWidth: width, croppedHeight: height } =
-      h264ParseConfiguration(chunk.data);
+    stylus!.enter();
+    stylus!.move(rotationMapper.x, rotationMapper.y);
 
-    if (!inputLeapClient) {
-      stylus = new HidStylus(width, height);
-      scrcpyClient.controller!.uHidCreate({
-        id: 0,
-        data: HidStylus.Descriptor,
-        vendorId: 0,
-        productId: 0,
-        name: "Stylus",
-      });
+    uHidStylus.write(stylus!.report);
+  });
 
-      inputLeapClient = await InputLeapClient.connect(
-        host,
-        Number.parseInt(port, 10),
-        name,
-        width,
-        height
-      );
+  client.onLeave(() => {
+    stylus!.leave();
+    uHidStylus.write(stylus!.report);
+  });
 
-      inputLeapClient.onEnter(({ x, y }) => {
-        stylus!.enter();
-        stylus!.move(x, y);
-        scrcpyClient.controller!.uHidInput({
-          id: 0,
-          data: stylus!.report,
-        });
-      });
+  client.onMouseMove(({ x, y }) => {
+    rotationMapper.setLogicalPosition(x, y);
 
-      inputLeapClient.onLeave(() => {
-        stylus!.leave();
-        scrcpyClient.controller!.uHidInput({
-          id: 0,
-          data: stylus!.report,
-        });
-      });
+    stylus!.move(rotationMapper.x, rotationMapper.y);
 
-      inputLeapClient.onMouseMove(({ x, y }) => {
-        stylus!.move(x, y);
-        scrcpyClient.controller!.uHidInput({
-          id: 0,
-          data: stylus!.report,
-        });
-      });
+    uHidStylus.write(stylus!.report);
+  });
 
-      inputLeapClient.onMouseDown((button) => {
-        stylus!.buttonDown(button);
-        scrcpyClient.controller!.uHidInput({
-          id: 0,
-          data: stylus!.report,
-        });
-      });
+  client.onMouseDown((button) => {
+    stylus!.buttonDown(button);
+    uHidStylus.write(stylus!.report);
+  });
 
-      inputLeapClient.onMouseUp((button) => {
-        stylus!.buttonUp(button);
-        scrcpyClient.controller!.uHidInput({
-          id: 0,
-          data: stylus!.report,
-        });
-      });
+  client.onMouseUp((button) => {
+    stylus!.buttonUp(button);
+    uHidStylus.write(stylus!.report);
+  });
 
-      inputLeapClient.onClipboard((data) => {
-        scrcpyClient.controller!.setClipboard({
-          content: data,
-          paste: false,
-          sequence: 0n,
-        });
-      });
+  client.onClipboard((content) => {
+    server.setClipboard(content);
+  });
 
-      options.clipboard!.pipeTo(
-        new WritableStream({
-          write(chunk) {
-            inputLeapClient!.setClipboard(chunk);
-          },
-        })
-      );
-    } else {
-      stylus!.setSize(height, height);
-      inputLeapClient.setSize(width, height);
-    }
+  return client;
+});
+
+server.onDisplayChange(async ({ width, height, rotation }) => {
+  rotationMapper.setSize(width, height);
+  rotationMapper.setRotation(rotation);
+
+  if (!inputLeapLazy.hasValue) {
+    inputLeapLazy.getOrCreate(
+      rotationMapper.logicalWidth,
+      rotationMapper.logicalHeight,
+    );
+  } else {
+    const inputLeapClient = await inputLeapLazy.get();
+    inputLeapClient.setSize(
+      rotationMapper.logicalWidth,
+      rotationMapper.logicalHeight,
+      rotationMapper.logicalX,
+      rotationMapper.logicalY,
+    );
   }
-}
+
+  stylus.setSize(width, height);
+  stylus.move(rotationMapper.x, rotationMapper.y);
+
+  await uHidStylus.write(stylus.report);
+});
+
+server.onClipboardChange(async (content) => {
+  const inputLeapClient = await inputLeapLazy.get();
+  inputLeapClient.setClipboard(content);
+});

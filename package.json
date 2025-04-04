@@ -4,7 +4,6 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "postinstall": "fetch-scrcpy-server 3.1",
     "build": "tsc"
   },
   "keywords": [],
@@ -12,18 +11,16 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@yume-chan/adb": "^1.1.0",
-    "@yume-chan/adb-scrcpy": "^1.1.0",
-    "@yume-chan/adb-server-node-tcp": "^1.1.0",
-    "@yume-chan/event": "^1.0.0",
-    "@yume-chan/fetch-scrcpy-server": "^1.0.0",
-    "@yume-chan/no-data-view": "^1.0.0",
-    "@yume-chan/scrcpy": "^1.1.0",
-    "@yume-chan/stream-extra": "^1.0.0",
-    "@yume-chan/struct": "^1.0.0"
+    "@yume-chan/adb": "^2.0.1",
+    "@yume-chan/adb-server-node-tcp": "^2.0.1",
+    "@yume-chan/async": "^4.1.2",
+    "@yume-chan/event": "^2.0.0",
+    "@yume-chan/no-data-view": "^2.0.0",
+    "@yume-chan/stream-extra": "^2.0.1",
+    "@yume-chan/struct": "^2.0.1"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
-    "typescript": "^5.7.2"
+    "@types/node": "^22.14.0",
+    "typescript": "^5.8.2"
   }
 }

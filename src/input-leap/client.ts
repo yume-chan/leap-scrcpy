@@ -26,7 +26,7 @@ const MessageHello = struct(
     versionMajor: u16,
     versionMinor: u16,
   },
-  { littleEndian: false }
+  { littleEndian: false },
 );
 
 const MessageHelloBack = struct(
@@ -36,7 +36,7 @@ const MessageHelloBack = struct(
     versionMinor: u16,
     name: string(u32),
   },
-  { littleEndian: false }
+  { littleEndian: false },
 );
 
 const MessageInfo = struct(
@@ -50,7 +50,7 @@ const MessageInfo = struct(
     mouseX: u16,
     mouseY: u16,
   },
-  { littleEndian: false }
+  { littleEndian: false },
 );
 
 const MessageMouseMove = struct(
@@ -58,7 +58,7 @@ const MessageMouseMove = struct(
     x: u16,
     y: u16,
   },
-  { littleEndian: false }
+  { littleEndian: false },
 );
 
 const MessageEnter = struct(
@@ -68,7 +68,7 @@ const MessageEnter = struct(
     sequenceNumber: u32,
     mask: u16,
   },
-  { littleEndian: false }
+  { littleEndian: false },
 );
 
 async function readMessage(readable: BufferedReadableStream) {
@@ -89,14 +89,20 @@ export class InputLeapClient {
   static readonly VersionMinor = 6;
 
   static async connect(
-    host: string,
-    port: number,
+    server: {
+      host: string;
+      port: number;
+      key?: string | Buffer;
+      cert?: string | Buffer;
+    },
     name: string,
     width: number,
-    height: number
+    height: number,
   ) {
-    const socket = connect(port, host, {
+    const socket = connect(server.port, server.host, {
       rejectUnauthorized: false,
+      key: server.key,
+      cert: server.cert,
     });
     await once(socket, "secureConnect");
 
@@ -111,7 +117,7 @@ export class InputLeapClient {
 
       if (startsWith(buffer, MessageType.Hello)) {
         const message = MessageHello.deserialize(
-          bufferExactReadable(buffer, MessageType.Hello.length)
+          bufferExactReadable(buffer, MessageType.Hello.length),
         );
 
         if (
@@ -129,7 +135,7 @@ export class InputLeapClient {
             versionMajor: InputLeapClient.VersionMajor,
             versionMinor: InputLeapClient.VersionMinor,
             name,
-          })
+          }),
         );
 
         continue;
@@ -147,7 +153,7 @@ export class InputLeapClient {
             unused: 0,
             mouseX: 0,
             mouseY: 0,
-          })
+          }),
         );
         continue;
       }
@@ -223,7 +229,7 @@ export class InputLeapClient {
 
         if (startsWith(buffer, MessageType.Enter)) {
           const message = MessageEnter.deserialize(
-            bufferExactReadable(buffer, MessageType.Enter.length)
+            bufferExactReadable(buffer, MessageType.Enter.length),
           );
           this.#lastSequenceNumber = message.sequenceNumber;
           this.#onEnter.fire({
@@ -242,7 +248,7 @@ export class InputLeapClient {
 
         if (startsWith(buffer, MessageType.MouseMove)) {
           const message = MessageMouseMove.deserialize(
-            bufferExactReadable(buffer, MessageType.MouseMove.length)
+            bufferExactReadable(buffer, MessageType.MouseMove.length),
           );
           this.#onMouseMove.fire({ x: message.x, y: message.y });
           continue;
@@ -287,7 +293,7 @@ export class InputLeapClient {
     this.#keepAliveTimeout.refresh();
   }
 
-  setSize(width: number, height: number) {
+  setSize(width: number, height: number, mouseX: number, mouseY: number) {
     this.#writeMessage(
       MessageInfo.serialize({
         type: MessageType.Info,
@@ -296,9 +302,9 @@ export class InputLeapClient {
         screenWidth: width,
         screenHeight: height,
         unused: 0,
-        mouseX: 0,
-        mouseY: 0,
-      })
+        mouseX,
+        mouseY,
+      }),
     );
   }
 
@@ -314,7 +320,7 @@ export class InputLeapClient {
 
     for (const chunk of ClipboardChunk.serialize(
       this.#lastSequenceNumber,
-      data
+      data,
     )) {
       this.#writeMessage(chunk);
     }

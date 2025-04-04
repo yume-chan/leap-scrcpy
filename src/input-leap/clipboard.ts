@@ -4,10 +4,11 @@ import {
   decodeUtf8,
   EmptyUint8Array,
   encodeUtf8,
+  field,
+  FieldDefaultSerializeContext,
   struct,
   u32,
   u8,
-  type DeserializeContext,
   type Field,
   type StructLike,
   type StructValue,
@@ -32,7 +33,7 @@ const Mark = {
   End: 3,
 } as const;
 
-function array<F extends Field<unknown, string, unknown>>(
+function array<F extends Field<unknown, string, unknown, unknown>>(
   field: F
 ): Field<
   F extends Field<infer FT, string, unknown> ? FT[] : never,
@@ -45,81 +46,38 @@ function array<S extends StructLike<unknown>>(
 function array(
   type: Field<unknown, string, unknown> | StructLike<unknown>
 ): Field<unknown, never, never> {
-  if ("fields" in type) {
-    return {
-      size: 4,
-      dynamicSize(value: unknown[]) {
-        return (
-          4 +
-          value.reduce<number>(
-            (acc, item) => acc + type.serialize(item as never).length,
-            0
-          )
-        );
-      },
-      serialize(value: unknown[], context) {
-        context = { ...context };
-
-        u32.serialize(value.length, context);
-        context.index += 4;
-
-        for (const item of value) {
-          const size = type.serialize(
-            item as never,
-            context.buffer.subarray(context.index)
-          );
-          context.index += size;
-        }
-      },
-      deserialize: bipedal(function* (
-        then,
-        context: DeserializeContext<never>
-      ) {
-        const length = yield* then(u32.deserialize(context));
-
-        const result = new Array(length);
-        for (let i = 0; i < length; i += 1) {
-          result[i] = yield* then(type.deserialize(context.reader));
-        }
-
-        return result as never;
-      }),
-    };
-  }
-
-  return {
-    size: 4,
-    dynamicSize(value: unknown[]) {
-      if (!type.dynamicSize) {
-        return 4 + type.size * value.length;
-      }
-      return (
-        4 +
-        value.reduce<number>((acc, item) => acc + type.dynamicSize!(item), 0)
-      );
-    },
-    serialize(value: unknown[], context) {
-      context = { ...context };
-
-      u32.serialize(value.length, context);
-      context.index += 4;
+  return field(
+    4,
+    'default',
+    (value: unknown[], context) => {
+      const buffers: Uint8Array[] = [];
+      buffers.push(u32.serialize(value.length, context));
 
       for (const item of value) {
-        type.serialize(item, context);
-        context.index += type.dynamicSize ? type.dynamicSize(item) : type.size;
+        buffers.push(type.serialize(item, context));
       }
+
+      const buffer = new Uint8Array(buffers.reduce((a, b) => a + b.length, 0));
+      let offset = 0;
+      for (const item of buffers) {
+        buffer.set(item, offset);
+        offset += item.length;
+      }
+
+      return buffer
     },
-    deserialize: bipedal(function* (then, context: DeserializeContext<never>) {
-      const length = yield* then(u32.deserialize(context));
+    function* (then, reader, context) {
+      const newLocal = u32.deserialize(reader, context);
+      const length = yield* then(newLocal);
 
       const result = new Array(length);
       for (let i = 0; i < length; i += 1) {
-        result[i] = yield* then(type.deserialize(context));
+        result[i] = yield* then(type.deserialize(reader, context));
       }
 
       return result as never;
-    }),
-  };
+    }
+  );
 }
 
 const Clipboard = struct(
