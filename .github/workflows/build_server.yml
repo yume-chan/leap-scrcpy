@@ -3,7 +3,7 @@ on:
     branches:
       - main
     paths:
-      - 'server/**'
+      - "server/**"
 
 jobs:
   build_server:
@@ -12,6 +12,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin" # See 'Supported distributions' for available options
+          java-version: "21"
+          cache: "gradle"
 
       - name: Build
         working-directory: server
