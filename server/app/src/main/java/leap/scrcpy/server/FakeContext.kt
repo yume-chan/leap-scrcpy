@@ -20,29 +20,32 @@ class FakeContext : ContextWrapper(
         val contentResolver by lazy {
             @Suppress("unused") object : ContentResolver(instance) {
                 private val activityManagerService: Reflect =
-                    Reflect.onClass(ActivityManager::class.java).call("getService");
+                    Reflect.onClass(ActivityManager::class.java).call("getService")
 
-                fun acquireProvider(c: Context?, name: String?): IContentProvider {
+                fun acquireProvider(
+                    @Suppress("UNUSED_PARAMETER") c: Context?, name: String?
+                ): IContentProvider {
                     return activityManagerService.call(
                         "getContentProviderExternal", name, 0, Binder(), "*cmd*"
                     ).get("provider")
                 }
 
-                fun releaseProvider(icp: IContentProvider?): Boolean {
+                fun releaseProvider(@Suppress("UNUSED_PARAMETER") icp: IContentProvider?): Boolean {
                     return false
                 }
 
                 fun acquireUnstableProvider(
-                    c: Context?, name: String?
+                    @Suppress("UNUSED_PARAMETER") c: Context?,
+                    @Suppress("UNUSED_PARAMETER") name: String?
                 ): IContentProvider? {
                     return null
                 }
 
-                fun releaseUnstableProvider(icp: IContentProvider?): Boolean {
+                fun releaseUnstableProvider(@Suppress("UNUSED_PARAMETER") icp: IContentProvider?): Boolean {
                     return false
                 }
 
-                fun unstableProviderDied(icp: IContentProvider?) {
+                fun unstableProviderDied(@Suppress("UNUSED_PARAMETER") icp: IContentProvider?) {
                 }
             }
         }
@@ -56,7 +59,7 @@ class FakeContext : ContextWrapper(
         return "com.android.shell"
     }
 
-    override fun getSystemService(name: String): Any {
+    override fun getSystemService(name: String): Any? {
         when (name) {
             Context.CLIPBOARD_SERVICE -> {
                 val service = super.getSystemService(name)

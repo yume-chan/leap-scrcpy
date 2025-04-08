@@ -2,7 +2,6 @@ package leap.scrcpy.server
 
 import android.annotation.SuppressLint
 import android.content.res.Configuration
-import android.graphics.Point
 import android.graphics.Rect
 import android.hardware.display.DisplayManager
 import android.hardware.display.DisplayManager.DisplayListener
@@ -25,24 +24,13 @@ import java.io.DataOutputStream
 
 @SuppressLint("DiscouragedPrivateApi", "PrivateApi")
 object Main {
-    private val displayManager: DisplayManager by lazy {
-        FakeContext.instance.getSystemService(
-            DisplayManager::class.java
-        )
-    }
-
     private val displayManagerGlobal: Reflect by lazy {
         Reflect.onClass("android.hardware.display.DisplayManagerGlobal").call("getInstance")
     }
 
     private var resetShowTouches = false
 
-    @Suppress("DEPRECATION")
     private fun getDisplayInfo(): DisplayInfoMessage {
-//        val display = displayManager.getDisplay(0)
-//        val size = Point()
-//        display.getRealSize(size)
-//        return DisplayInfoMessage(size.x, size.y, display.rotation)
         val displayInfo = displayManagerGlobal.call("getDisplayInfo", 0)
         return DisplayInfoMessage(
             displayInfo.call("getNaturalWidth").get(),
@@ -107,7 +95,7 @@ object Main {
             val handlerThread = HandlerThread("DisplayListener").apply { start() }
             val handler = Handler(handlerThread.getLooper())
 
-            val displayManager = FakeContext.instance.getSystemService(DisplayManager::class.java)
+            val displayManager = FakeContext.instance.getSystemService(DisplayManager::class.java)!!
             displayManager.registerDisplayListener(object : DisplayListener {
                 override fun onDisplayAdded(displayId: Int) {
                 }
